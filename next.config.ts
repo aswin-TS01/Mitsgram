@@ -8,17 +8,14 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
   experimental: {
-    turbo: {
-      rules: {}, // keep this valid
-    },
-    serverActions: {
-      bodySizeLimit: "2mb",
-    },
+    serverActions: true,
   },
-  // ❌ remove output: "standalone" — it breaks routes-manifest generation
+  // ✅ Do NOT include "output" or "distDir"
+  // ✅ Do NOT include "turbo"
 };
 
 export default nextConfig;
+
 
 
 
