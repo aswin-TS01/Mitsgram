@@ -1,29 +1,35 @@
 "use client";
-import { Suspense, useState, useEffect } from "react";
+
+import { useEffect, useState, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 
-function ChatComponent() {
+export default function ChatPage() {
+  const { data: session } = useSession();
   const params = useSearchParams();
   const receiverId = params.get("receiver");
-  const { data: session } = useSession(); // 🔑 Get logged-in user
+
   const [senderId, setSenderId] = useState("");
-  const [messages, setMessages] = useState([]);
+  const [messages, setMessages] = useState<any[]>([]);
   const [content, setContent] = useState("");
+  const chatEndRef = useRef<HTMLDivElement | null>(null);
 
-  // Fetch the logged-in user's ID from DB using email
+  // 🧩 Fetch current user id
+  // in app/chat/page.tsx (inside useEffect that fetches senderId)
   useEffect(() => {
-    const fetchSenderId = async () => {
-      if (!session?.user?.email) return;
+    if (!session?.user?.email) return;
 
+    const fetchSenderId = async () => {
       try {
         const res = await fetch(`/api/getUserId?email=${session.user.email}`);
-        if (res.ok) {
-          const data = await res.json();
-          console.log("✅ Logged-in user ID:", data.id);
-          setSenderId(data.id);
+        const data = await res.json();
+        console.log("getUserId response:", data); // debug
+        const id = data.userId ?? data.id ?? data?.user?.id;
+        if (id) {
+          setSenderId(id);
+          console.log("✅ senderId set to:", id);
         } else {
-          console.error("Failed to fetch sender ID");
+          console.error("❌ getUserId did not return an id");
         }
       } catch (err) {
         console.error("Error fetching sender ID:", err);
@@ -34,85 +40,106 @@ function ChatComponent() {
   }, [session]);
 
 
-  // Load existing messages between sender & receiver
+  // 🧩 Fetch messages
   useEffect(() => {
     if (!receiverId || !senderId) return;
     fetch(`/api/messages?sender=${senderId}&receiver=${receiverId}`)
       .then((res) => res.json())
-      .then((data) => setMessages(data));
+      .then((data) => setMessages(data))
+      .catch((err) => console.error("Error fetching messages:", err));
   }, [receiverId, senderId]);
 
-  async function sendMessage() {
+  // 🧩 Auto-scroll
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  // 🧩 Send message
+  const sendMessage = async (e: any) => {
+    e.preventDefault();
     if (!content.trim()) return;
+
     const res = await fetch("/api/messages", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ senderId, receiverId, content }),
     });
-    const newMessage = await res.json();
-    setMessages([...messages, newMessage]);
-    setContent("");
-  }
+
+    if (res.ok) {
+      const newMessage = await res.json();
+      setMessages((prev) => [...prev, newMessage]);
+      setContent("");
+    }
+  };
+
+  // 🧩 Format date + time
+  const formatDateTime = (iso: string) => {
+    const date = new Date(iso);
+    return date.toLocaleString("en-IN", {
+      day: "2-digit",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    });
+  };
 
   return (
-    <div className="flex flex-col h-screen p-6">
-      <h1 className="text-2xl font-bold mb-3">Chat</h1>
-      <div className="flex-1 border rounded p-3 overflow-y-auto mb-4 bg-gray-50">
-        {messages.map((m: any) => {
-          const createdAtRaw = m.createdAt;
-          const createdAtDate = createdAtRaw ? new Date(createdAtRaw) : null;
-          const timeString =
-            createdAtDate && !isNaN(createdAtDate.getTime())
-              ? createdAtDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-              : "";
+    <div className="min-h-screen flex flex-col bg-gradient-to-br from-gray-900 via-gray-800 to-blue-900 text-gray-100">
+      {/* Header */}
+      <header className="px-6 py-4 border-b border-gray-700 bg-gray-900/80 backdrop-blur-md sticky top-0 z-10 flex items-center justify-between">
+        <h1 className="text-xl font-semibold text-teal-400">MitsGram Chat 💬</h1>
+        <button
+          onClick={() => (window.location.href = "/users")}
+          className="text-sm text-gray-400 hover:text-teal-400 transition"
+        >
+          ← Back to Users
+        </button>
+      </header>
 
-          const isSender = m.senderId === senderId;
-
-          return (
+      {/* Messages area */}
+      <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
+        {messages.map((msg) => (
+          <div
+            key={msg.id}
+            className={`flex flex-col ${msg.senderId === senderId ? "items-end" : "items-start"
+              }`}
+          >
             <div
-              key={m.id ?? `${m.senderId}-${m.receiverId}-${Math.random()}`}
-              className={`flex w-full ${isSender ? "justify-end" : "justify-start"}`}
+              className={`max-w-xs px-4 py-2 rounded-2xl shadow ${msg.senderId === senderId
+                  ? "bg-teal-500 text-white rounded-br-none"
+                  : "bg-gray-700 text-gray-100 rounded-bl-none"
+                }`}
             >
-              <div
-                className={`p-3 my-1 rounded-2xl max-w-[70%] shadow-md ${isSender
-                    ? "bg-teal-500 text-white rounded-br-none"
-                    : "bg-gray-800 text-gray-100 rounded-bl-none"
-                  }`}
-              >
-                <p className="break-words text-base">{m.content}</p>
-                {timeString && (
-                  <span className="text-xs text-gray-300 block mt-1 text-right">
-                    {timeString}
-                  </span>
-                )}
-              </div>
+              <p className="whitespace-pre-wrap break-words">{msg.content}</p>
             </div>
-          );
-        })}
-
-
-
+            <span className="text-xs text-gray-400 mt-1">
+              {msg.createdAt ? formatDateTime(msg.createdAt) : ""}
+            </span>
+          </div>
+        ))}
+        <div ref={chatEndRef} />
       </div>
-      <div className="flex">
+
+      {/* Input bar */}
+      <form
+        onSubmit={sendMessage}
+        className="p-4 bg-gray-900 border-t border-gray-700 flex items-center gap-3"
+      >
         <input
           type="text"
           value={content}
           onChange={(e) => setContent(e.target.value)}
-          placeholder="Type your message..."
-          className="flex-1 border p-2 rounded-l"
+          placeholder="Type a message..."
+          className="flex-1 p-3 bg-gray-800 text-gray-100 rounded-xl border border-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500"
         />
-        <button onClick={sendMessage} className="bg-blue-500 text-white px-4 rounded-r">
+        <button
+          type="submit"
+          className="px-5 py-3 bg-teal-500 hover:bg-teal-600 text-white font-semibold rounded-xl transition"
+        >
           Send
         </button>
-      </div>
+      </form>
     </div>
-  );
-}
-// ✅ Wrap in Suspense boundary to prevent build error
-export default function ChatPage() {
-  return (
-    <Suspense fallback={<div className="p-6 text-gray-400">Loading chat...</div>}>
-      <ChatComponent />
-    </Suspense>
   );
 }
