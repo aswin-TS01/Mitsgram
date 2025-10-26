@@ -5,10 +5,24 @@ const prisma = new PrismaClient();
 
 export async function GET() {
   try {
-    const users = await prisma.user.findMany({
-      select: { id: true, name: true, email: true, department: true, batch: true },
-    });
-    return NextResponse.json(users);
+    const students = await prisma.user.findMany();
+    const faculty = await prisma.faculty.findMany();
+
+    // Mark who is who
+    const formattedStudents = students.map((s) => ({
+      ...s,
+      role: "Student",
+    }));
+
+    const formattedFaculty = faculty.map((f) => ({
+      ...f,
+      role: "Faculty",
+    }));
+
+    // Combine both lists
+    const allUsers = [...formattedStudents, ...formattedFaculty];
+
+    return NextResponse.json(allUsers);
   } catch (error) {
     console.error("Error fetching users:", error);
     return NextResponse.json({ error: "Failed to fetch users" }, { status: 500 });
