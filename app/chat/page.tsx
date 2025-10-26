@@ -1,145 +1,89 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { useSession } from "next-auth/react";
 
-export default function ChatPage() {
-  const { data: session } = useSession();
-  const params = useSearchParams();
-  const receiverId = params.get("receiver");
-
-  const [senderId, setSenderId] = useState("");
+function ChatContent() {
+  const searchParams = useSearchParams();
+  const receiverId = searchParams.get("receiver");
+  const [senderId, setSenderId] = useState<string | null>(null);
   const [messages, setMessages] = useState<any[]>([]);
-  const [content, setContent] = useState("");
-  const chatEndRef = useRef<HTMLDivElement | null>(null);
+  const [input, setInput] = useState("");
 
-  // 🧩 Fetch current user id
-  // in app/chat/page.tsx (inside useEffect that fetches senderId)
   useEffect(() => {
-    if (!session?.user?.email) return;
-
-    const fetchSenderId = async () => {
-      try {
-        const res = await fetch(`/api/getUserId?email=${session.user.email}`);
-        const data = await res.json();
-        console.log("getUserId response:", data); // debug
-        const id = data.userId ?? data.id ?? data?.user?.id;
-        if (id) {
-          setSenderId(id);
-          console.log("✅ senderId set to:", id);
-        } else {
-          console.error("❌ getUserId did not return an id");
+    fetch("/api/auth/session")
+      .then((res) => res.json())
+      .then(async (session) => {
+        if (session?.user?.email) {
+          const res = await fetch(`/api/getUserId?email=${session.user.email}`);
+          const data = await res.json();
+          setSenderId(data.id);
         }
-      } catch (err) {
-        console.error("Error fetching sender ID:", err);
-      }
-    };
+      });
+  }, []);
 
-    fetchSenderId();
-  }, [session]);
-
-
-  // 🧩 Fetch messages
   useEffect(() => {
     if (!receiverId || !senderId) return;
     fetch(`/api/messages?sender=${senderId}&receiver=${receiverId}`)
       .then((res) => res.json())
-      .then((data) => setMessages(data))
-      .catch((err) => console.error("Error fetching messages:", err));
+      .then((data) => setMessages(data));
   }, [receiverId, senderId]);
 
-  // 🧩 Auto-scroll
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
-  // 🧩 Send message
-  const sendMessage = async (e: any) => {
-    e.preventDefault();
-    if (!content.trim()) return;
-
-    const res = await fetch("/api/messages", {
+  const sendMessage = async () => {
+    if (!input.trim()) return;
+    await fetch("/api/messages", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ senderId, receiverId, content }),
+      body: JSON.stringify({ senderId, receiverId, content: input }),
     });
-
-    if (res.ok) {
-      const newMessage = await res.json();
-      setMessages((prev) => [...prev, newMessage]);
-      setContent("");
-    }
-  };
-
-  // 🧩 Format date + time
-  const formatDateTime = (iso: string) => {
-    const date = new Date(iso);
-    return date.toLocaleString("en-IN", {
-      day: "2-digit",
-      month: "short",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: true,
-    });
+    setInput("");
+    fetch(`/api/messages?sender=${senderId}&receiver=${receiverId}`)
+      .then((res) => res.json())
+      .then((data) => setMessages(data));
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-gradient-to-br from-gray-900 via-gray-800 to-blue-900 text-gray-100">
-      {/* Header */}
-      <header className="px-6 py-4 border-b border-gray-700 bg-gray-900/80 backdrop-blur-md sticky top-0 z-10 flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-teal-400">MitsGram Chat 💬</h1>
-        <button
-          onClick={() => (window.location.href = "/users")}
-          className="text-sm text-gray-400 hover:text-teal-400 transition"
-        >
-          ← Back to Users
-        </button>
-      </header>
-
-      {/* Messages area */}
-      <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
+    <div className="flex flex-col min-h-screen bg-gradient-to-b from-gray-900 via-gray-800 to-gray-900 text-white">
+      <div className="flex-1 overflow-y-auto p-4 space-y-2">
         {messages.map((msg) => (
           <div
             key={msg.id}
-            className={`flex flex-col ${msg.senderId === senderId ? "items-end" : "items-start"
+            className={`p-3 rounded-2xl max-w-xs ${msg.senderId === senderId
+                ? "ml-auto bg-teal-600 text-white"
+                : "mr-auto bg-gray-700 text-gray-200"
               }`}
           >
-            <div
-              className={`max-w-xs px-4 py-2 rounded-2xl shadow ${msg.senderId === senderId
-                  ? "bg-teal-500 text-white rounded-br-none"
-                  : "bg-gray-700 text-gray-100 rounded-bl-none"
-                }`}
-            >
-              <p className="whitespace-pre-wrap break-words">{msg.content}</p>
-            </div>
-            <span className="text-xs text-gray-400 mt-1">
-              {msg.createdAt ? formatDateTime(msg.createdAt) : ""}
-            </span>
+            <p>{msg.content}</p>
+            <p className="text-xs text-gray-300 mt-1 text-right">
+              {new Date(msg.createdAt).toLocaleString()}
+            </p>
           </div>
         ))}
-        <div ref={chatEndRef} />
       </div>
 
-      {/* Input bar */}
-      <form
-        onSubmit={sendMessage}
-        className="p-4 bg-gray-900 border-t border-gray-700 flex items-center gap-3"
-      >
+      <div className="p-4 flex border-t border-gray-700 bg-gray-800">
         <input
-          type="text"
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-          placeholder="Type a message..."
-          className="flex-1 p-3 bg-gray-800 text-gray-100 rounded-xl border border-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="Type your message..."
+          className="flex-1 p-2 rounded bg-gray-700 text-white outline-none"
         />
         <button
-          type="submit"
-          className="px-5 py-3 bg-teal-500 hover:bg-teal-600 text-white font-semibold rounded-xl transition"
+          onClick={sendMessage}
+          className="ml-2 bg-teal-500 hover:bg-teal-600 px-4 py-2 rounded font-semibold"
         >
           Send
         </button>
-      </form>
+      </div>
     </div>
+  );
+}
+
+// ✅ Wrap with Suspense to fix build error
+export default function ChatPage() {
+  return (
+    <Suspense fallback={<div className="text-center p-10 text-gray-300">Loading chat...</div>}>
+      <ChatContent />
+    </Suspense>
   );
 }
