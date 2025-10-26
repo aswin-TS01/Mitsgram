@@ -109,3 +109,11 @@ export default function ChatPage() {
     </div>
   );
 }
+// ✅ Wrap in Suspense boundary to prevent build error
+export default function ChatPage() {
+  return (
+    <Suspense fallback={<div className="p-6 text-gray-400">Loading chat...</div>}>
+      <ChatComponent />
+    </Suspense>
+  );
+}
