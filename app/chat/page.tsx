@@ -1,10 +1,9 @@
 "use client";
-
-import { useState, useEffect } from "react";
+import { Suspense, useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 
-export default function ChatPage() {
+function ChatComponent() {
   const params = useSearchParams();
   const receiverId = params.get("receiver");
   const { data: session } = useSession(); // 🔑 Get logged-in user
